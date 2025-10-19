@@ -372,6 +372,12 @@ async function createCommand(json, keyString, title) {
     return `${await SettingsManager.getExecutableName()} "${metadata.url}" ${headerString} ${keyString} ${engineArg} ${formatMuxerArg} ${streamArgs.join(' ')}${title ? ` --save-name "${title}"` : ""}`.trim();
 }
 
+async function getToken(json) {
+    const metadata = JSON.parse(json);
+    
+    return metadata.headers["x-tcdn-token"] || '';
+}
+
 async function reloadAllCommands() {
     const logContainers = document.querySelectorAll('.log-container');
     for (const logContainer of logContainers) {
@@ -381,7 +387,10 @@ async function reloadAllCommands() {
         }
         const select = logContainer.querySelector(".manifest-box");
         const key = logContainer.querySelector('.key-box');
+        const token=logContainer.querySelector('.token-box');
+
         command.value = await createCommand(select.value, key.value, logContainer.log.title);
+        token.value=await getToken(select.value);
     }
 }
 
@@ -402,7 +411,8 @@ async function appendLog(result, testDuplicate) {
     const keyString = result.keys.map(key => `--key ${key.kid}:${key.k}`).join(' ');
     const date = new Date(result.timestamp * 1000);
     const dateString = date.toLocaleString();
-    const token=result.manifests[0].headers['x-tcdn-token'] || '';
+    //const token=result.manifests[0].headers['x-tcdn-token'] || '';
+            
 
     const logContainer = document.createElement('div');
     logContainer.classList.add('log-container');
@@ -432,7 +442,7 @@ async function appendLog(result, testDuplicate) {
                 Date:<input type="text" class="text-box" value="${dateString}" readonly>
             </label>
             <label class="expanded-only right-bound token-copy">
-                <a href="#" title="Click to copy">Token:</a><input type="text" class="text-box" value="${token}" readonly>
+                <a href="#" title="Click to copy">Token:</a><input type="text" class="text-box token-box" readonly>
             </label>
             ${result.sessions?.length > 0 ? `<label class="expanded-only right-bound session-copy">
                 <a href="#" title="Click to copy, right click to remove">Sessions:</a><select class="text-box session-box"></select>
@@ -477,16 +487,21 @@ async function appendLog(result, testDuplicate) {
 
     if (result.manifests?.length > 0) {
         const command = logContainer.querySelector('.command-box');
-
+        const token=logContainer.querySelector('.token-box');
         const select = logContainer.querySelector(".manifest-box");
+
         select.addEventListener('change', async () => {
             command.value = await createCommand(select.value, keyString, result.title);
+            token.value=await getToken(select.value);
         });
+
         result.manifests.forEach((manifest) => {
             const option = new Option(`[${manifest.type}] ${manifest.url}`, JSON.stringify(manifest));
             select.add(option);
         });
+
         command.value = await createCommand(select.value, keyString, result.title);
+        token.value=await getToken(select.value);
 
         const manifestCopy = logContainer.querySelector('.manifest-copy');
         manifestCopy.addEventListener('click', () => {
@@ -505,7 +520,7 @@ async function appendLog(result, testDuplicate) {
 
         const tokenCopy = logContainer.querySelector('.token-copy');
         tokenCopy.addEventListener('click', () => {
-            navigator.clipboard.writeText(token || '');
+            navigator.clipboard.writeText(token.value || '');
         });
     }
 
