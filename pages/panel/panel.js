@@ -21,6 +21,7 @@ const overlayMessage = document.getElementById('overlayMessage');
 const icon = document.getElementById('icon');
 const main = document.getElementById('main');
 const commandOptions = document.getElementById('command-options');
+const advanced = document.getElementById('advanced');
 const keysLabel = document.getElementById('keysLabel');
 const keyContainer = document.getElementById('key-container');
 
@@ -87,14 +88,12 @@ reloadButton.addEventListener('click', async function () {
 });
 
 const version = document.getElementById('version');
-version.textContent = "v" + chrome.runtime.getManifest().version;
+version.textContent = "v" + chrome.runtime.getManifest().version_name;
 
 const wvEnabled = document.getElementById('wvEnabled');
 const prEnabled = document.getElementById('prEnabled');
 const ckEnabled = document.getElementById('ckEnabled');
 const blockDisabled = document.getElementById('blockDisabled');
-const allowPersistence = document.getElementById('allowPersistence');
-const wvServerCert = document.getElementById('wv-server-cert');
 
 const wvdSelect = document.getElementById('wvdSelect');
 const remoteSelect = document.getElementById('remoteSelect');
@@ -108,24 +107,36 @@ const remoteCombobox = document.getElementById('remote-combobox');
 const prdCombobox = document.getElementById('prd-combobox');
 const prRemoteCombobox = document.getElementById('pr-remote-combobox');
 
+const wvServerCert = document.getElementById('wv-server-cert');
+const maxHdcp = document.getElementById('max-hdcp');
+const maxHdcpLabel = document.getElementById('max-hdcp-label');
+const maxRobustness = document.getElementById('max-robustness');
+const allowSL3K = document.getElementById('allowSL3K');
+const allowPersistence = document.getElementById('allowPersistence');
+
 [
     enabled,
-    wvEnabled, prEnabled, ckEnabled, blockDisabled, allowPersistence, wvServerCert,
+    wvEnabled, prEnabled, ckEnabled, blockDisabled,
     wvdSelect, remoteSelect, customSelect,
     prdSelect, prRemoteSelect, prCustomSelect,
     wvdCombobox, remoteCombobox,
     prdCombobox, prRemoteCombobox,
+    wvServerCert, maxRobustness, allowSL3K, allowPersistence
 ].forEach(elem => {
     elem.addEventListener('change', async function () {
         applyConfig();
     });
-})
-
-main.addEventListener('toggle', async function () {
-    SettingsManager.setUICollapsed(!main.open, !commandOptions.open);
 });
-commandOptions.addEventListener('toggle', async function () {
-    SettingsManager.setUICollapsed(!main.open, !commandOptions.open);
+
+[main, commandOptions, advanced].forEach(elem => {
+    elem.addEventListener('toggle', async function () {
+        SettingsManager.setUICollapsed(!main.open, !commandOptions.open, !advanced.open);
+    });
+});
+
+maxHdcp.addEventListener('input', function () {
+    maxHdcpLabel.textContent = getHdcpLevelLabel(maxHdcp.value);
+    applyConfig();
 });
 
 const exportButton = document.getElementById('export');
@@ -145,7 +156,7 @@ for (const a of document.getElementsByTagName('a')) {
 }
 // #endregion Main
 
-// #region Widevine Device
+// #region Widevine Local
 document.getElementById('fileInput').addEventListener('click', () => {
     chrome.runtime.sendMessage({ type: "OPEN_PICKER_WVD" });
     window.close();
@@ -157,6 +168,10 @@ remove.addEventListener('click', async function () {
     wvdCombobox.innerHTML = '';
     await DeviceManager.loadSetAllWidevineDevices();
     applyConfig();
+    if (wvdCombobox.options.length === 0) {
+        remove.disabled = true;
+        download.disabled = true;
+    }
 });
 
 const download = document.getElementById('download');
@@ -168,9 +183,40 @@ download.addEventListener('click', async function () {
     SettingsManager.downloadFile(
         base64toUint8Array(await DeviceManager.loadWidevineDevice(widevineDevice)),
         widevineDevice + ".wvd"
-    )
+    );
 });
-// #endregion Widevine Device
+// #endregion Widevine Local
+
+// #region Playready Local
+document.getElementById('prdInput').addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: "OPEN_PICKER_PRD" });
+    window.close();
+});
+
+const prdRemove = document.getElementById('prdRemove');
+prdRemove.addEventListener('click', async function() {
+    await PRDeviceManager.removePlayreadyDevice(prdCombobox.options[prdCombobox.selectedIndex]?.text || "");
+    prdCombobox.innerHTML = '';
+    await PRDeviceManager.loadSetAllPlayreadyDevices();
+    applyConfig();
+    if (prdCombobox.options.length === 0) {
+        prdRemove.disabled = true;
+        prdDownload.disabled = true;
+    }
+});
+
+const prdDownload = document.getElementById('prdDownload');
+prdDownload.addEventListener('click', async function() {
+    const playreadyDevice = prdCombobox.options[prdCombobox.selectedIndex]?.text;
+    if (!playreadyDevice) {
+        return;
+    }
+    SettingsManager.downloadFile(
+        base64toUint8Array(await PRDeviceManager.loadPlayreadyDevice(playreadyDevice)),
+        playreadyDevice + ".prd"
+    );
+});
+// #endregion Playready Local
 
 // #region Remote CDM
 [
@@ -189,6 +235,10 @@ remoteRemove.addEventListener('click', async function() {
     remoteCombobox.innerHTML = '';
     await RemoteCDMManager.loadSetWVRemoteCDMs();
     applyConfig();
+    if (remoteCombobox.options.length === 0) {
+        remoteRemove.disabled = true;
+        remoteDownload.disabled = true;
+    }
 });
 const prRemoteRemove = document.getElementById('prRemoteRemove');
 prRemoteRemove.addEventListener('click', async function() {
@@ -196,6 +246,10 @@ prRemoteRemove.addEventListener('click', async function() {
     prRemoteCombobox.innerHTML = '';
     await RemoteCDMManager.loadSetPRRemoteCDMs();
     applyConfig();
+    if (prRemoteCombobox.options.length === 0) {
+        prRemoteRemove.disabled = true;
+        prRemoteDownload.disabled = true;
+    }
 });
 
 async function downloadRemote(remoteCdmName) {
@@ -222,33 +276,6 @@ prRemoteDownload.addEventListener('click', async function() {
     downloadRemote(remoteCdm);
 });
 // #endregion Remote CDM
-
-// #region Playready Device
-document.getElementById('prdInput').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: "OPEN_PICKER_PRD" });
-    window.close();
-});
-
-const prdRemove = document.getElementById('prdRemove');
-prdRemove.addEventListener('click', async function() {
-    await PRDeviceManager.removePlayreadyDevice(prdCombobox.options[prdCombobox.selectedIndex]?.text || "");
-    prdCombobox.innerHTML = '';
-    await PRDeviceManager.loadSetAllPlayreadyDevices();
-    applyConfig();
-});
-
-const prdDownload = document.getElementById('prdDownload');
-prdDownload.addEventListener('click', async function() {
-    const playreadyDevice = prdCombobox.options[prdCombobox.selectedIndex]?.text;
-    if (!playreadyDevice) {
-        return;
-    }
-    SettingsManager.downloadFile(
-        base64toUint8Array(await PRDeviceManager.loadPlayreadyDevice(playreadyDevice)),
-        playreadyDevice + ".prd"
-    )
-});
-// #endregion Playready Device
 
 // #region Custom Handlers
 const customCombobox = document.getElementById('custom-combobox');
@@ -317,7 +344,8 @@ async function restoreCommandOptions() {
 // #region Logs
 const clear = document.getElementById('clear');
 clear.addEventListener('click', async function() {
-    chrome.storage.local.clear();
+    const storage = currentTab.incognito ? chrome.storage.session : chrome.storage.local;
+    storage.clear();
     keyContainer.innerHTML = "";
 });
 
@@ -447,7 +475,7 @@ async function appendLog(result, testDuplicate) {
         });
     }
 
-    if (result.manifests.length > 0) {
+    if (result.manifests?.length > 0) {
         const command = logContainer.querySelector('.command-box');
 
         const select = logContainer.querySelector(".manifest-box");
@@ -525,6 +553,21 @@ async function appendLog(result, testDuplicate) {
     updateIcon();
 }
 
+function getHdcpLevelLabel(levelId) {
+    switch (parseInt(levelId)) {
+        case 0: return "None";
+        case 1: return "1.0";
+        case 2: return "1.1";
+        case 3: return "1.2";
+        case 4: return "1.3";
+        case 5: return "1.4";
+        case 6: return "2.0";
+        case 7: return "2.1";
+        case 8: return "2.2";
+        case 9: return "2.3";
+    }
+}
+
 chrome.storage.onChanged.addListener(async (changes, areaName) => {
     if (areaName === 'local') {
         for (const [key, values] of Object.entries(changes)) {
@@ -555,8 +598,12 @@ async function loadConfig(scope = "global") {
     prEnabled.checked = profileConfig.playready.enabled;
     ckEnabled.checked = profileConfig.clearkey.enabled;
     blockDisabled.checked = profileConfig.blockDisabled;
-    allowPersistence.checked = profileConfig.allowPersistence;
     wvServerCert.value = profileConfig.widevine.serverCert || "if_provided";
+    maxHdcp.value = profileConfig.hdcp ?? 9;
+    maxHdcpLabel.textContent = getHdcpLevelLabel(maxHdcp.value);
+    maxRobustness.value = profileConfig.widevine.robustness || "HW_SECURE_ALL";
+    allowSL3K.checked = profileConfig.playready.allowSL3K !== false;
+    allowPersistence.checked = profileConfig.allowPersistence;
     SettingsManager.setSelectedDeviceType(profileConfig.widevine.type);
     await DeviceManager.selectWidevineDevice(profileConfig.widevine.device.local);
     await RemoteCDMManager.selectRemoteCDM(profileConfig.widevine.device.remote);
@@ -584,7 +631,8 @@ async function applyConfig() {
                 "custom": customCombobox.value
             },
             "type": wvType,
-            "serverCert": wvServerCert.value
+            "serverCert": wvServerCert.value,
+            "robustness": maxRobustness.value
         },
         "playready": {
             "enabled": prEnabled.checked,
@@ -593,11 +641,13 @@ async function applyConfig() {
                 "remote": prRemoteCombobox.options[prRemoteCombobox.selectedIndex]?.text || null,
                 "custom": prCustomCombobox.value
             },
-            "type": prType
+            "type": prType,
+            "allowSL3K": allowSL3K.checked
         },
         "clearkey": {
             "enabled": ckEnabled.checked
         },
+        "hdcp": parseInt(maxHdcp.value),
         "blockDisabled": blockDisabled.checked,
         "allowPersistence": allowPersistence.checked
     };
@@ -626,8 +676,11 @@ async function getSessionCount() {
 }
 
 async function updateIcon() {
-    if (await getSessionCount()) {
+    const sessionCnt = await getSessionCount();
+    if (sessionCnt > 0) {
         icon.src = "../../images/icon-active.png";
+    } else if (sessionCnt === 0) {
+        icon.src = "../../images/icon-closed.png";
     } else if (await SettingsManager.getGlobalEnabled()) {
         icon.src = "../../images/icon.png";
     } else {
@@ -664,12 +717,15 @@ document.addEventListener('DOMContentLoaded', async function () {
         await timeoutPromise(navigator.requestMediaKeySystemAccess('org.w3.clearkey', configs), 3000);
         overlay.style.display = 'none';
 
-        const { devicesCollapsed, commandsCollapsed } = await SettingsManager.getUICollapsed();
+        const { devicesCollapsed, commandsCollapsed, advancedCollapsed } = await SettingsManager.getUICollapsed();
         if (!devicesCollapsed) {
             main.open = true;
         }
         if (!commandsCollapsed) {
             commandOptions.open = true;
+        }
+        if (!advancedCollapsed) {
+            advanced.open = true;
         }
         currentTab = await getForegroundTab();
         const host = new URL(currentTab.url).host;
