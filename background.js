@@ -25,6 +25,7 @@ let manifests = new Map();
 let requests = new Map();
 let sessions = new Map();
 let sessionCnt = {};
+let noDRM=false;
 
 const isSW = typeof window === "undefined";
 
@@ -198,10 +199,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     console.log("[Vineless]", "KEYS", JSON.stringify(res.keys), tab_url);
 
                     const storage = sender.tab?.incognito ? AsyncSessionStorage : AsyncLocalStorage;
+                    const logs = Object.values(await AsyncLocalStorage.getStorage());
                     // Find existing PSSH with the same KID for WebM initData to prevent duplicate log entries
                     if (/^[0-9a-fA-F]{32}$/.test(res.pssh)) {
                         // Find first log that contains the requested KID
-                        const logs = Object.values(await AsyncLocalStorage.getStorage());
+                        // const logs = Object.values(await AsyncLocalStorage.getStorage());
                         const log = logs.find(log =>
                             log.origin === origin && log.type === "WIDEVINE" && log.keys.some(k => k.kid.toLowerCase() === res.pssh.toLowerCase())
                         );
@@ -212,6 +214,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const key = res.pssh + origin;
                     const existing = (await storage.getStorage(key))?.[key];
                     if (existing) {
+                        console.log("[Vineless] Updating existing license log:", key);
                         if (persistent && profileConfig.allowPersistence && origin !== null) {
                             if (existing.sessions) {
                                 existing.sessions.push(sessionId);
@@ -226,6 +229,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         existing.timestamp = Math.floor(Date.now() / 1000);
                         await storage.setStorage({ [key]: existing });
                     } else {
+                        console.log("[Vineless] Storing new license log:", key);
                         res.url = tab_url;
                         res.origin = origin;
                         res.manifests = manifests.has(tab_url) ? manifests.get(tab_url) : [];
@@ -237,6 +241,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
 
                         await storage.setStorage({ [key]: res });
+                    }
+
+                    let duplicated = logs.find(log => log.type === "MANIFEST_ONLY" && log.url === tab_url);
+                        
+                    if (duplicated) {
+                        console.log("Removing duplicated manifest-only log:", duplicated.pssh + origin);
+                        await storage.removeStorage(duplicated.pssh + origin);
                     }
 
                     sendResponse(JSON.stringify({
@@ -418,7 +429,49 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         manifests.set(tab_url, elements);
                     }
                 }
+
+                if (noDRM) {
+                    noDRM=false;
+
+                    const storage = sender.tab?.incognito ? AsyncSessionStorage : AsyncLocalStorage;
+
+                    const logs = Object.values(await storage.getStorage());
+
+                    let log = logs.find(log =>
+                        log.url === tab_url
+                    );
+
+                    if (!log) {
+                        console.log("Storing manifest-only log");
+
+                        const uid = crypto.randomUUID();
+
+                        let res = new Map();
+                        res.keys = [];
+                        res.manifests = manifests.has(tab_url) ? manifests.get(tab_url) : [];
+                        res.url = tab_url;
+                        res.origin = origin;
+                        res.title = sender.tab?.title;
+                        res.timestamp = Math.floor(Date.now() / 1000);
+                        res.type = 'MANIFEST_ONLY';
+                        res.pssh = uid;
+
+                        await storage.setStorage({ [res.pssh+origin]: res });
+                    }
+                    else {
+                        console.log("Existing manifest-only log found");
+                    }
+                }
+
                 sendResponse();
+                break;
+
+            case "NO_DRM":
+                console.log("[Vineless] No DRM detected");
+                noDRM=true;
+
+                sendResponse();
+                break;
         }
     })();
     return true;

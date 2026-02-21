@@ -310,10 +310,13 @@
         let profileConfig = null;
 
         async function getEnabledForKeySystem(keySystem) {
+            console.debug("[Vineless] getEnabledForKeySystem", keySystem);
             if (!profileConfig) {
                 profileConfig = JSON.parse(await emitAndWaitForResponse("GET_PROFILE"));
             }
             if (!keySystem) {
+                console.debug("[Vineless] No keySystem provided");
+                emitAndWaitForResponse("NO_DRM");
                 return false;
             }
             if (!profileConfig.enabled) {
@@ -606,6 +609,7 @@
 
         if (typeof HTMLMediaElement !== 'undefined') {
             proxy(HTMLMediaElement.prototype, 'setMediaKeys', async (_target, _this, _args) => {
+                console.debug("[Vineless] HTMLMediaElement.setMediaKeys called");
                 console.log("[Vineless] setMediaKeys", _args);
                 const keys = _args[0];
                 const keySystem = keys?._emeShim?.origKeySystem;
@@ -650,6 +654,7 @@
 
         if (typeof MediaKeySystemAccess !== 'undefined') {
             proxy(MediaKeySystemAccess.prototype, 'createMediaKeys', async (_target, _this, _args) => {
+                console.debug("[Vineless] MediaKeySystemAccess.createMediaKeys called");
                 console.log("[Vineless] createMediaKeys");
 
                 const realKeys = _target.apply(_this, _args);

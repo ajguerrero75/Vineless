@@ -374,7 +374,15 @@ async function createCommand(json, keyString, title) {
 
 async function getToken(json) {
     const metadata = JSON.parse(json);
-    
+
+    if (metadata.headers["Origin"]=="https://www.nba.com") {
+        const url=metadata.url;
+        const parts = url.split('/');
+        const target = parts[parts.length - 2]; // penúltimo elemento
+
+        return  target
+    }
+
     return metadata.headers["x-tcdn-token"] || '';
 }
 
@@ -410,14 +418,16 @@ function getFriendlyType(type) {
 async function appendLog(result, testDuplicate) {
     const keyString = result.keys.map(key => `--key ${key.kid}:${key.k}`).join(' ');
     const date = new Date(result.timestamp * 1000);
-    const dateString = date.toLocaleString();
-    //const token=result.manifests[0].headers['x-tcdn-token'] || '';
-            
+    const dateString = date.toLocaleString(); 
 
     const logContainer = document.createElement('div');
     logContainer.classList.add('log-container');
 
-    const pssh = result.pssh || result.pssh_data || result.wrm_header;
+    let pssh='';
+
+    if (result.type === "PLAYREADY" || result.type === "WIDEVINE") {
+        pssh = result.pssh || result.pssh_data || result.wrm_header;
+    }
 
     logContainer.innerHTML = `
         <button class="toggleButton">+</button>
