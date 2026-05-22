@@ -420,6 +420,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     headers: requests.has(parsed.url) ? requests.get(parsed.url) : [],
                 };
 
+                //console.log(element);
+
                 if (!manifests.has(tab_url)) {
                     manifests.set(tab_url, [element]);
                 } else {
@@ -432,35 +434,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                 if (noDRM) {
                     noDRM=false;
-
-                    const storage = sender.tab?.incognito ? AsyncSessionStorage : AsyncLocalStorage;
-
-                    const logs = Object.values(await storage.getStorage());
-
-                    let log = logs.find(log =>
-                        log.url === tab_url
-                    );
-
-                    if (!log) {
-                        console.log("Storing manifest-only log");
-
-                        const uid = crypto.randomUUID();
-
-                        let res = new Map();
-                        res.keys = [];
-                        res.manifests = manifests.has(tab_url) ? manifests.get(tab_url) : [];
-                        res.url = tab_url;
-                        res.origin = origin;
-                        res.title = sender.tab?.title;
-                        res.timestamp = Math.floor(Date.now() / 1000);
-                        res.type = 'MANIFEST_ONLY';
-                        res.pssh = uid;
-
-                        await storage.setStorage({ [res.pssh+origin]: res });
-                    }
-                    else {
-                        console.log("Existing manifest-only log found");
-                    }
+                    noDRMManifestStorage(tab_url, origin, sender, "DASH");
+                }
+                else if (element.type === "HLS_MASTER") {
+                    noDRMManifestStorage(tab_url, origin, sender, "HLS");
                 }
 
                 sendResponse();
@@ -476,6 +453,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
 });
+
+async function noDRMManifestStorage(tab_url, origin, sender, type) {
+    const storage = sender.tab?.incognito ? AsyncSessionStorage : AsyncLocalStorage;
+
+    const logs = Object.values(await storage.getStorage());
+
+    let log = logs.find(log =>
+        log.url === tab_url
+    );
+
+    if (!log) {
+        console.log("Storing " + type + " manifest-only log");
+
+        const uid = crypto.randomUUID();
+
+        let res = new Map();
+        res.keys = [];
+        res.manifests = manifests.has(tab_url) ? manifests.get(tab_url) : [];
+        res.url = tab_url;
+        res.origin = origin;
+        res.title = sender.tab?.title;
+        res.timestamp = Math.floor(Date.now() / 1000);
+        res.type = 'MANIFEST_ONLY_'+type;
+        res.pssh = uid;
+
+        await storage.setStorage({ [res.pssh+origin]: res });
+    }
+    else {
+        console.log("Existing " + type + " manifest-only log found");
+    }
+}
 
 chrome.webNavigation.onCommitted.addListener((details) => {
     if (details.frameId === 0) { // main frame only

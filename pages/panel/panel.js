@@ -425,7 +425,7 @@ async function appendLog(result, testDuplicate) {
 
     let pssh='';
 
-    if (result.type === "PLAYREADY" || result.type === "WIDEVINE") {
+    if (result.type === "PLAYREADY" || result.type === "WIDEVINE" || result.type.includes("MANIFEST_ONLY")) {
         pssh = result.pssh || result.pssh_data || result.wrm_header;
     }
 
@@ -552,6 +552,7 @@ async function appendLog(result, testDuplicate) {
     removeButton.addEventListener('click', () => {
         logContainer.remove();
         const storage = currentTab.incognito ? AsyncSessionStorage : AsyncLocalStorage;
+        chrome.runtime.sendMessage({ type: "DEBUG", body: pssh + (result.origin ?? '') });
         storage.removeStorage([pssh + (result.origin ?? '')]);
     });
 
